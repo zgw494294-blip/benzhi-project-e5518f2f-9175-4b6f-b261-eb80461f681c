@@ -265,13 +265,17 @@ func (c *ReleaseCase) ReturnReview(findingIDs []string, note string, now time.Ti
 	found := 0
 	for i := range c.Findings {
 		if wanted[c.Findings[i].ID] {
-			c.Findings[i].Status = FindingOpen
-			c.Findings[i].ResolvedAt = nil
 			found++
 		}
 	}
 	if found != len(wanted) {
 		return fmt.Errorf("%w: 指定冲突不存在", ErrValidation)
+	}
+	for i := range c.Findings {
+		if wanted[c.Findings[i].ID] {
+			c.Findings[i].Status = FindingOpen
+			c.Findings[i].ResolvedAt = nil
+		}
 	}
 	c.Review.Decision = "returned"
 	c.Review.Note = strings.TrimSpace(note)
