@@ -215,7 +215,43 @@ func (c *ReleaseCase) Clone() *ReleaseCase {
 		n.Credential = &cr
 	}
 	n.Events = append([]DomainEvent(nil), c.Events...)
+	for i := range n.Events {
+		n.Events[i].Data = cloneEventData(c.Events[i].Data)
+	}
 	return &n
+}
+
+// cloneEventData 深拷贝领域事件数据。事件数据由命令方法构建，可能包含字符串、
+// 数值、布尔等标量，以及嵌套的切片和 map（例如授权修订审计中的 before/after）。
+// 仅深拷贝这些类型；遇到未知引用类型时保留原值，以避免误导性地共享或丢弃数据。
+func cloneEventData(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = cloneEventValue(v)
+	}
+	return out
+}
+
+func cloneEventValue(v any) any {
+	switch value := v.(type) {
+	case map[string]any:
+		return cloneEventData(value)
+	case map[string]string:
+		return cloneStringMap(value)
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		copied := make([]any, len(value))
+		for i := range value {
+			copied[i] = cloneEventValue(value[i])
+		}
+		return copied
+	default:
+		return v
+	}
 }
 
 func cloneConsentHistory(in []ConsentRevision) []ConsentRevision {
