@@ -372,13 +372,13 @@ type CredentialReport struct {
 func (s *Service) VerifyDetailed(caseID string) (CredentialReport, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cached, ok := s.verificationCache[caseID]; ok {
-		return cloneCredentialReport(cached), nil
-	}
 	c, err := s.repo.Get(caseID)
 	if err != nil {
 		return CredentialReport{}, err
 	}
+	// 每次校验都从磁盘重新读取日志并校验散列链，确保发布凭据签发后
+	// JSON Lines 日志被原地篡改时，再次校验能够立即发现损坏并返回
+	// journal.ErrCorruptJournal，而不是返回过期的有效报告。
 	integrity, err := s.repo.VerifyIntegrity()
 	if err != nil {
 		return CredentialReport{}, err
@@ -398,11 +398,5 @@ func (s *Service) VerifyDetailed(caseID string) (CredentialReport, error) {
 	if !passed {
 		report.Valid = false
 	}
-	s.verificationCache[caseID] = cloneCredentialReport(report)
 	return report, nil
-}
-
-func cloneCredentialReport(report CredentialReport) CredentialReport {
-	report.Checks = append([]policy.VerificationCheck(nil), report.Checks...)
-	return report
 }

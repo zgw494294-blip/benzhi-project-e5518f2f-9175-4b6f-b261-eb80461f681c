@@ -17,11 +17,10 @@ import (
 )
 
 type Service struct {
-	mu                sync.Mutex
-	repo              *journal.Repository
-	scanner           *policy.Scanner
-	now               func() time.Time
-	verificationCache map[string]CredentialReport
+	mu      sync.Mutex
+	repo    *journal.Repository
+	scanner *policy.Scanner
+	now     func() time.Time
 }
 
 type Detail struct {
@@ -45,7 +44,7 @@ type Todo struct {
 }
 
 func NewService(repo *journal.Repository, scanner *policy.Scanner) *Service {
-	return &Service{repo: repo, scanner: scanner, now: time.Now, verificationCache: map[string]CredentialReport{}}
+	return &Service{repo: repo, scanner: scanner, now: time.Now}
 }
 
 func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) {
