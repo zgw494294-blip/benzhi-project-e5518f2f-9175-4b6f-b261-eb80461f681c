@@ -59,6 +59,11 @@ func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) 
 	}
 	normalizedArchive := domain.NormalizeArchiveCode(command.ArchiveCode)
 	if existingID, occupied := s.repo.FindByArchiveCode(normalizedArchive); occupied {
+		// 同一 Idempotency-Key 的并发创建可能在查询与提交之间落库：若此时幂等项已存在，
+		// 视为重放并返回已保存的发布案，避免对自身重放误报馆藏编号冲突。
+		if prior, ok, err := s.lookup(key, fingerprint); ok || err != nil {
+			return prior, err
+		}
 		return Detail{}, &domain.ArchiveCodeConflictError{ArchiveCode: normalizedArchive, ExistingCaseID: existingID}
 	}
 	id, err := newID("case")
@@ -77,7 +82,18 @@ func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) 
 	if _, err := s.repo.Commit(c, 0, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
-	return detail, nil
+	// 并发幂等创建：另一服务实例可能已用相同 Idempotency-Key 提交了同一发布案。此时
+	// Commit 为幂等重放（同一指纹返回成功但不落库新记录），本地 detail 的随机编号并未
+	// 持久化。重新读取幂等项，返回确已保存的发布案快照，保证两次调用得到完全相同且确实
+	// 落库的 case ID。
+	persisted, ok, err := s.lookup(key, fingerprint)
+	if err != nil {
+		return Detail{}, err
+	}
+	if !ok {
+		return Detail{}, fmt.Errorf("%w: 提交后幂等项缺失", domain.ErrInvalidState)
+	}
+	return persisted, nil
 }
 
 func (s *Service) FreezeConsents(caseID string, expected int64, command FreezeConsentsCommand, key string) (Detail, error) {
