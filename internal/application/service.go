@@ -26,7 +26,7 @@ type Service struct {
 
 type cachedResponse struct {
 	fingerprint string
-	detail      Detail
+	response    json.RawMessage
 }
 
 type Detail struct {
@@ -83,7 +83,7 @@ func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) 
 	if _, err := s.repo.Commit(c, 0, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
-	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, detail: detail}
+	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, response: append(json.RawMessage(nil), response...)}
 	return detail, nil
 }
 
@@ -198,7 +198,7 @@ func (s *Service) changeProjected(operation, caseID string, expected int64, comm
 	if _, err := s.repo.Commit(c, expected, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
-	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, detail: detail}
+	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, response: append(json.RawMessage(nil), response...)}
 	return detail, nil
 }
 
@@ -210,7 +210,7 @@ func (s *Service) lookup(key, fingerprint string) (Detail, bool, error) {
 		if cached.fingerprint != fingerprint {
 			return Detail{}, true, journal.ErrIdempotencyConflict
 		}
-		return cached.detail, true, nil
+		return decodeIdempotentResponse(cached.response)
 	}
 	raw, ok, err := s.repo.LookupIdempotency(key, fingerprint)
 	if err != nil {
@@ -219,6 +219,10 @@ func (s *Service) lookup(key, fingerprint string) (Detail, bool, error) {
 	if !ok {
 		return Detail{}, false, nil
 	}
+	return decodeIdempotentResponse(raw)
+}
+
+func decodeIdempotentResponse(raw json.RawMessage) (Detail, bool, error) {
 	var detail Detail
 	if err := json.Unmarshal(raw, &detail); err != nil {
 		return Detail{}, true, fmt.Errorf("恢复幂等响应: %w", err)
