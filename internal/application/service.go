@@ -44,7 +44,26 @@ type Todo struct {
 }
 
 func NewService(repo *journal.Repository, scanner *policy.Scanner) *Service {
-	return &Service{repo: repo, scanner: scanner, now: time.Now}
+	s := &Service{repo: repo, scanner: scanner, now: time.Now}
+	// 注册在原子提交边界内最终确定凭据的回调。Approve 在读锁外读取的下一序号
+	// 可能被并发提交占用，因此凭据的 EventSequence、CanonicalDigest 及派生标识符
+	// 必须在 Commit 写锁内锚定到实际分配的序号上，确保凭据事件序号始终等于签发
+	// 该凭据的日志记录序号，校验也不会误认其他记录为锚点。
+	repo.SetCredentialFinalizer(func(c *domain.ReleaseCase, sequence int64) error {
+		if c.Credential == nil {
+			return nil
+		}
+		digest := policy.Digest(c, c.Credential.ReviewerName, sequence)
+		c.Credential.EventSequence = sequence
+		c.Credential.CanonicalDigest = digest
+		c.Credential.ID = "credential-" + digest[:16]
+		return nil
+	})
+	repo.SetResponseMarshaler(func(c *domain.ReleaseCase) (json.RawMessage, error) {
+		projected := project(c)
+		return json.Marshal(projected)
+	})
+	return s
 }
 
 func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) {
@@ -191,6 +210,10 @@ func (s *Service) changeProjected(operation, caseID string, expected int64, comm
 	if _, err := s.repo.Commit(c, expected, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
+	// 提交边界内可能修正了凭据的事件序号和摘要，返回给调用方的 detail 必须从
+	// 最终聚合重新投影，使其与写入日志记录及幂等缓存的聚合快照保持一致。
+	finalized := project(c)
+	detail.Case, detail.Todos, detail.ReviewProgress = finalized.Case, finalized.Todos, finalized.ReviewProgress
 	return detail, nil
 }
 

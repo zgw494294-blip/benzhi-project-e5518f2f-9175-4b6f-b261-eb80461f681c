@@ -233,7 +233,33 @@ func (r *Repository) Commit(c *domain.ReleaseCase, expectedVersion int64, key, f
 	if err := validateEventBatch(events, expectedVersion, c.Version); err != nil {
 		return 0, err
 	}
-	rec := record{SchemaVersion: schemaVersion, Sequence: r.sequence + 1, PreviousHash: r.lastHash, Kind: "aggregate.committed", CaseID: c.ID, Case: c.Clone(), DomainEvents: events, Idempotency: &IdempotencyEntry{Key: key, Fingerprint: fingerprint, Response: append(json.RawMessage(nil), response...)}, WrittenAt: time.Now().UTC()}
+	// 在写锁内、记录写入前，把凭据的事件序号和规范化摘要锚定到本次提交真正
+	// 分配的序号上。Approve 在读锁外读取的下一序号可能已被并发提交占用，因此
+	// 凭据必须在此原子边界内取得自身记录的序号，确保 EventSequence 始终等于
+	// 签发该凭据的日志记录序号。
+	sequence := r.sequence + 1
+	if c.Credential != nil && r.finalizeCred != nil {
+		if err := r.finalizeCred(c, sequence); err != nil {
+			return 0, err
+		}
+	}
+	if err := c.ValidateInvariants(); err != nil {
+		return 0, err
+	}
+	// 凭据序号或摘要可能刚刚在提交边界内被修正，幂等缓存必须保存与写入记录中
+	// 聚合快照一致的响应，避免重放时把凭据锚定到错误的日志记录。
+	finalResponse := response
+	if c.Credential != nil && r.marshalResponse != nil {
+		rebuilt, err := r.marshalResponse(c)
+		if err != nil {
+			return 0, err
+		}
+		finalResponse = rebuilt
+	}
+	if len(finalResponse) == 0 {
+		return 0, fmt.Errorf("提交缺少幂等元数据")
+	}
+	rec := record{SchemaVersion: schemaVersion, Sequence: sequence, PreviousHash: r.lastHash, Kind: "aggregate.committed", CaseID: c.ID, Case: c.Clone(), DomainEvents: events, Idempotency: &IdempotencyEntry{Key: key, Fingerprint: fingerprint, Response: append(json.RawMessage(nil), finalResponse...)}, WrittenAt: time.Now().UTC()}
 	hash, err := hashRecord(rec)
 	if err != nil {
 		return 0, err
