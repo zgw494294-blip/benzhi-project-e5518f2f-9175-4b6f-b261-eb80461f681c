@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -91,7 +92,11 @@ func (s *Service) AddSegment(caseID string, expected int64, command AddSegmentCo
 }
 
 func (s *Service) Scan(caseID string, expected int64, key string) (Detail, error) {
-	return s.change("scan", caseID, expected, struct{}{}, key, func(c *domain.ReleaseCase) error {
+	return s.ScanContext(context.Background(), caseID, expected, key)
+}
+
+func (s *Service) ScanContext(ctx context.Context, caseID string, expected int64, key string) (Detail, error) {
+	detail, err := s.change("scan", caseID, expected, struct{}{}, key, func(c *domain.ReleaseCase) error {
 		plan, err := policy.NewFullScanPlan(c)
 		if err != nil {
 			return err
@@ -102,6 +107,13 @@ func (s *Service) Scan(caseID string, expected int64, key string) (Detail, error
 		}
 		return c.ApplyScan(findings, true, ids, s.now())
 	})
+	if err != nil {
+		return Detail{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Detail{}, fmt.Errorf("扫描请求已取消: %w", err)
+	}
+	return detail, nil
 }
 
 func (s *Service) Remediate(caseID string, expected int64, command RemediateCommand, key string) (Detail, error) {

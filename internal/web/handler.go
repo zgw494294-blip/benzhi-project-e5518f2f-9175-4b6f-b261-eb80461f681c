@@ -252,7 +252,7 @@ func (h *Handler) ScanCase(w http.ResponseWriter, r *http.Request) {
 	if !h.decode(w, r, &request) {
 		return
 	}
-	detail, err := h.service.Scan(r.PathValue("id"), request.ExpectedVersion, r.Header.Get("Idempotency-Key"))
+	detail, err := h.service.ScanContext(r.Context(), r.PathValue("id"), request.ExpectedVersion, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		h.writeError(w, err)
 		return
