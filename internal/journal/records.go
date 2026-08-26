@@ -3,6 +3,7 @@ package journal
 import (
 	"encoding/json"
 	"errors"
+	"hash"
 	"os"
 	"sync"
 	"time"
@@ -42,6 +43,7 @@ type Repository struct {
 	path         string
 	sequence     int64
 	lastHash     string
+	hasher       hash.Hash
 	cases        map[string]*domain.ReleaseCase
 	idempotency  map[string]IdempotencyEntry
 	archiveCodes map[string]string

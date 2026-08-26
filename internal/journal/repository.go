@@ -26,7 +26,7 @@ func Open(path string) (*Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开事件日志: %w", err)
 	}
-	r := &Repository{file: f, path: path, cases: map[string]*domain.ReleaseCase{}, idempotency: map[string]IdempotencyEntry{}, archiveCodes: map[string]string{}}
+	r := &Repository{file: f, path: path, hasher: sha256.New(), cases: map[string]*domain.ReleaseCase{}, idempotency: map[string]IdempotencyEntry{}, archiveCodes: map[string]string{}}
 	if err := r.restore(); err != nil {
 		_ = f.Close()
 		return nil, err
@@ -63,7 +63,7 @@ func (r *Repository) restore() error {
 			if rec.Sequence != sequence+1 || rec.PreviousHash != prior {
 				return fmt.Errorf("%w: 第 %d 行序号或前序散列不连续", ErrCorruptJournal, lineNo)
 			}
-			expected, hashErr := hashRecord(rec)
+			expected, hashErr := r.hashRecord(rec)
 			if hashErr != nil || rec.Hash != expected {
 				return fmt.Errorf("%w: 第 %d 行散列不匹配", ErrCorruptJournal, lineNo)
 			}
@@ -143,6 +143,19 @@ func hashRecord(rec record) (string, error) {
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (r *Repository) hashRecord(rec record) (string, error) {
+	rec.Hash = ""
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return "", err
+	}
+	r.hasher.Reset()
+	if _, err := r.hasher.Write(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(r.hasher.Sum(nil)), nil
 }
 
 func (r *Repository) Get(id string) (*domain.ReleaseCase, error) {
@@ -234,7 +247,7 @@ func (r *Repository) Commit(c *domain.ReleaseCase, expectedVersion int64, key, f
 		return 0, err
 	}
 	rec := record{SchemaVersion: schemaVersion, Sequence: r.sequence + 1, PreviousHash: r.lastHash, Kind: "aggregate.committed", CaseID: c.ID, Case: c.Clone(), DomainEvents: events, Idempotency: &IdempotencyEntry{Key: key, Fingerprint: fingerprint, Response: append(json.RawMessage(nil), response...)}, WrittenAt: time.Now().UTC()}
-	hash, err := hashRecord(rec)
+	hash, err := r.hashRecord(rec)
 	if err != nil {
 		return 0, err
 	}
@@ -308,7 +321,7 @@ func (r *Repository) VerifyIntegrity() (IntegrityReport, error) {
 		if rec.SchemaVersion != schemaVersion || rec.Sequence != priorSequence+1 || rec.PreviousHash != priorHash {
 			return IntegrityReport{}, fmt.Errorf("%w: 第 %d 行链路不连续", ErrCorruptJournal, index+1)
 		}
-		expected, err := hashRecord(rec)
+		expected, err := r.hashRecord(rec)
 		if err != nil || expected != rec.Hash {
 			return IntegrityReport{}, fmt.Errorf("%w: 第 %d 行散列不匹配", ErrCorruptJournal, index+1)
 		}
