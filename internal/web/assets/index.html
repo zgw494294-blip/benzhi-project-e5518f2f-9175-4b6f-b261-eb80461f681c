@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="公共档案馆口述史发布授权治理工作台">
+  <title>口述史发布放行工作台</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">PUBLIC ARCHIVE · CLEARANCE DESK</p>
+      <h1>口述史发布放行工作台</h1>
+    </div>
+    <div class="system-state"><span class="pulse"></span>本地治理链路</div>
+  </header>
+  <main>
+    <aside class="case-rail">
+      <div class="rail-heading"><h2>发布案</h2><button id="new-case" class="quiet">新建</button></div>
+      <div id="case-list" class="case-list" aria-live="polite"></div>
+      <p class="rail-note">所有变更以版本校验和幂等键提交，并写入本地哈希链日志。</p>
+    </aside>
+    <section class="workspace">
+      <div id="notice" class="notice hidden" role="status"></div>
+      <section id="create-panel" class="panel">
+        <div class="section-kicker">01 / 建立治理对象</div>
+        <h2>创建口述史发布案</h2>
+        <p>登记公开计划的基本责任信息，发布案将以“草拟中”开始。</p>
+        <form id="create-form" class="grid-form">
+          <label>馆藏编号<input name="archiveCode" required placeholder="例如 OH-2026-014"></label>
+          <label>发布标题<input name="title" required placeholder="例如 河畔社区口述史"></label>
+          <label>整理员<input name="editorName" required></label>
+          <label>目标公开日期<input name="targetPublishDate" required type="date"></label>
+          <button class="primary span-2" type="submit">创建并进入授权登记</button>
+        </form>
+      </section>
+      <section id="case-panel" class="hidden">
+        <div id="case-head" class="case-head"></div>
+        <details id="profile-editor" class="panel compact">
+          <summary>编辑发布案基础资料</summary>
+          <form id="profile-form" class="grid-form">
+            <label>发布标题<input name="title" required></label>
+            <label>整理员<input name="editorName" required></label>
+            <label>目标公开日期<input name="targetPublishDate" type="date" required></label>
+            <p class="meta">馆藏编号创建后不可修改；目标日期变化会要求重新全量扫描。</p>
+            <button class="primary span-2">保存基础资料</button>
+          </form>
+        </details>
+        <ol id="progress" class="progress"></ol>
+        <div id="todo-strip" class="todo-strip"></div>
+
+        <section class="panel" id="consent-section">
+          <div class="section-kicker">02 / 授权边界</div>
+          <div class="section-title"><h2>受访者授权边界</h2><span id="consent-revision" class="tag"></span></div>
+          <div id="consent-existing"></div>
+          <button type="button" id="start-consent-revision" class="quiet">复制当前清单开始修订</button>
+          <form id="consent-form" class="grid-form">
+            <label>受访者姓名<input name="participantName" required></label>
+            <label class="check"><input name="identityDisclosure" type="checkbox">允许公开真实身份</label>
+            <label>限制话题<input name="restrictedTopics" placeholder="用逗号分隔"></label>
+            <label>地点公开精度<select name="locationPrecision"><option value="none">不公开地点</option><option value="province">省级</option><option value="city">市级</option><option value="exact">精确地点</option></select></label>
+            <label>禁用截止日期<input name="embargoUntil" type="date"></label>
+            <label>授权证据摘要<input name="evidenceDigest" required placeholder="载体、页码或归档摘要"></label>
+            <button type="submit" class="quiet">加入本轮授权清单</button>
+            <button type="button" id="freeze-consents" class="primary">冻结本轮授权边界</button>
+          </form>
+          <div id="consent-draft" class="draft-list"></div>
+          <div id="consent-revision-actions" class="inline-form hidden">
+            <label>修订原因<input id="consent-reason" required placeholder="说明授权变化来源与原因"></label>
+            <button type="button" id="preview-consent-revision" class="quiet">预览差异</button>
+            <button type="button" id="confirm-consent-revision" class="primary">确认冻结新修订</button>
+          </div>
+          <div id="consent-diff"></div>
+        </section>
+
+        <section class="panel" id="segment-section">
+          <div class="section-kicker">03 / 材料目录</div>
+          <div class="section-title"><h2>有序录音片段</h2><button id="run-scan" class="primary">运行冲突扫描</button></div>
+          <div id="segment-list"></div>
+          <form id="segment-form" class="grid-form">
+            <label>开始毫秒<input name="startMillis" type="number" min="0" required></label>
+            <label>结束毫秒<input name="endMillis" type="number" min="1" required></label>
+            <label class="span-2">文字摘要<textarea name="summary" required></textarea></label>
+            <label>出现人物<input name="mentionedParticipants" placeholder="用逗号分隔"></label>
+            <label>话题标签<input name="topicTags" placeholder="用逗号分隔"></label>
+            <label class="span-2">地点标签<input name="locationTag" placeholder="exact:门牌 / city:城市 / province:省份"></label>
+            <button type="submit" class="quiet span-2">添加片段</button>
+          </form>
+          <details id="segment-batch-panel">
+            <summary>批量粘贴片段目录</summary>
+            <p class="meta">每行使用制表符分隔：开始毫秒、结束毫秒、摘要、人物（逗号分隔）、话题（逗号分隔）、地点标签。</p>
+            <textarea id="segment-batch-input" rows="7" placeholder="0&#9;12000&#9;开场介绍&#9;受访者甲&#9;社区&#9;city:南京"></textarea>
+            <div class="inline-form"><button id="preview-segment-batch" class="quiet" type="button">校验并预览</button><button id="confirm-segment-batch" class="primary" type="button" disabled>原子导入整批</button></div>
+            <div id="segment-batch-preview"></div>
+          </details>
+        </section>
+
+        <section class="panel" id="finding-section">
+          <div class="section-kicker">04 / 冲突与整改</div>
+          <div class="section-title"><h2>授权冲突</h2><span id="scan-state" class="tag"></span></div>
+          <div id="finding-statistics"></div>
+          <form id="finding-filter" class="inline-form"><label>规则<input name="rule" placeholder="IDENTITY"></label><label>受访者<input name="participant"></label><label>状态<select name="status"><option value="">全部</option><option value="open">待整改</option><option value="resolved">已关闭</option></select></label><label>片段序号从<input name="sequenceFrom" type="number" min="1"></label><label>至<input name="sequenceTo" type="number" min="1"></label><label>每页<input name="pageSize" type="number" min="1" max="100" value="50"></label><button class="quiet">筛选</button></form>
+          <div id="historical-warning" class="notice hidden"></div>
+          <div id="finding-list"></div>
+          <div id="batch-remediation" class="inline-form hidden"><label>统一措施<select id="batch-remediation-type"><option value="mute">静音</option><option value="pseudonym">化名</option><option value="generalize_location">地点泛化</option><option value="delete_segment">删除片段</option></select></label><label>统一说明<input id="batch-remediation-note" required></label><button id="apply-batch-remediation" class="primary" type="button">批量整改并合并重扫</button></div>
+        </section>
+
+        <section class="panel" id="review-section">
+          <div class="section-kicker">05 / 伦理复核</div>
+          <h2>复核决定</h2>
+          <div id="review-state"></div>
+          <form id="review-submit-form" class="inline-form"><label>复核员<input name="reviewerName" required></label><button class="primary">提交伦理复核</button></form>
+          <div id="review-actions" class="review-actions hidden">
+            <label>退回说明<textarea id="return-note" placeholder="说明需要重新整改的理由"></textarea></label>
+            <div id="return-findings"></div>
+            <button id="save-review-progress" class="quiet">保存核验进度</button>
+            <button id="return-review" class="danger">退回所选冲突</button>
+            <button id="approve-review" class="primary">批准并签发放行凭据</button>
+          </div>
+        </section>
+
+        <section class="panel credential-panel" id="credential-section">
+          <div class="section-kicker">06 / 不可变凭据</div>
+          <h2>发布放行凭据</h2>
+          <div id="credential-view" class="empty">批准后将在此展示冻结范围、事件序号和规范化摘要。</div>
+          <button id="verify-credential" class="primary hidden">本地复算校验</button>
+          <a id="download-credential" class="quiet hidden" download>下载 JSON 凭据包</a>
+          <div id="verify-result"></div>
+        </section>
+      </section>
+    </section>
+  </main>
+  <footer>ORAL HISTORY CLEARANCE · 本地可追溯放行</footer>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
