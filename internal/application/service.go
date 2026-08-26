@@ -17,10 +17,11 @@ import (
 )
 
 type Service struct {
-	mu      sync.Mutex
-	repo    *journal.Repository
-	scanner *policy.Scanner
-	now     func() time.Time
+	mu              sync.Mutex
+	repo            *journal.Repository
+	scanner         *policy.Scanner
+	now             func() time.Time
+	projectionCache map[string]json.RawMessage
 }
 
 type Detail struct {
@@ -44,7 +45,12 @@ type Todo struct {
 }
 
 func NewService(repo *journal.Repository, scanner *policy.Scanner) *Service {
-	return &Service{repo: repo, scanner: scanner, now: time.Now}
+	return &Service{
+		repo:            repo,
+		scanner:         scanner,
+		now:             time.Now,
+		projectionCache: map[string]json.RawMessage{},
+	}
 }
 
 func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) {
@@ -77,6 +83,7 @@ func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) 
 	if _, err := s.repo.Commit(c, 0, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
+	s.projectionCache[c.ID] = append(json.RawMessage(nil), response...)
 	return detail, nil
 }
 
@@ -191,6 +198,7 @@ func (s *Service) changeProjected(operation, caseID string, expected int64, comm
 	if _, err := s.repo.Commit(c, expected, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
+	s.projectionCache[c.ID] = append(json.RawMessage(nil), response...)
 	return detail, nil
 }
 
@@ -213,11 +221,26 @@ func (s *Service) lookup(key, fingerprint string) (Detail, bool, error) {
 }
 
 func (s *Service) Get(caseID string) (Detail, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if raw, ok := s.projectionCache[caseID]; ok {
+		var cached Detail
+		if err := json.Unmarshal(raw, &cached); err != nil {
+			return Detail{}, fmt.Errorf("读取发布案投影缓存: %w", err)
+		}
+		return cached, nil
+	}
 	c, err := s.repo.Get(caseID)
 	if err != nil {
 		return Detail{}, err
 	}
-	return project(c), nil
+	detail := project(c)
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		return Detail{}, err
+	}
+	s.projectionCache[caseID] = append(json.RawMessage(nil), raw...)
+	return detail, nil
 }
 
 func (s *Service) List() []Detail {
