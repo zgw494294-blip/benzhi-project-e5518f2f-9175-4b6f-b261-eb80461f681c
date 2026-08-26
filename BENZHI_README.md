@@ -1,6 +1,6 @@
 # BENZHI_README
 
-基于 Go 实现的oral-history-clearance Web 项目，一款后端服务，用于支持oral-history-clearance的核心业务流程。
+基于 Go 实现的口述史发布授权治理 Web 项目，一款后端服务，用于管理口述史同意边界、敏感片段整改、发布复核和授权放行。
 
 ## 项目说明
 - 项目：benzhi-project-e5518f2f-9175-4b6f-b261-eb80461f681c
