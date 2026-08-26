@@ -81,7 +81,10 @@ func (s *Scanner) Execute(c *domain.ReleaseCase, plan ScanPlan) ([]domain.Findin
 	if plan.ContentRevision != c.ContentRevision || plan.ConsentRevision != c.ConsentRevision {
 		return nil, nil, domain.ErrScanStale
 	}
-	ids := make(map[string]bool, len(plan.SegmentIDs))
+	for id := range s.plannedSegmentIDs {
+		delete(s.plannedSegmentIDs, id)
+	}
+	ids := s.plannedSegmentIDs
 	known := map[string]bool{}
 	for _, segment := range c.Segments {
 		known[segment.ID] = true
@@ -98,7 +101,8 @@ func (s *Scanner) Execute(c *domain.ReleaseCase, plan ScanPlan) ([]domain.Findin
 	if len(ids) == 0 {
 		return nil, nil, fmt.Errorf("%w: 扫描计划为空", domain.ErrValidation)
 	}
-	return s.ScanSegments(c, ids), ids, nil
+	s.lastFindings = s.ScanSegments(c, ids)
+	return s.lastFindings, ids, nil
 }
 
 type VerificationCheck struct {

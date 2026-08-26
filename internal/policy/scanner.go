@@ -11,9 +11,14 @@ import (
 	"oral-history-clearance/internal/domain"
 )
 
-type Scanner struct{}
+type Scanner struct {
+	plannedSegmentIDs map[string]bool
+	lastFindings      []domain.FindingSeed
+}
 
-func NewScanner() *Scanner { return &Scanner{} }
+func NewScanner() *Scanner {
+	return &Scanner{plannedSegmentIDs: map[string]bool{}}
+}
 
 func (s *Scanner) ScanAll(c *domain.ReleaseCase) []domain.FindingSeed {
 	ids := make(map[string]bool, len(c.Segments))
