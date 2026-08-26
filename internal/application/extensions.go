@@ -370,6 +370,11 @@ type CredentialReport struct {
 }
 
 func (s *Service) VerifyDetailed(caseID string) (CredentialReport, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.verificationCache[caseID]; ok {
+		return cloneCredentialReport(cached), nil
+	}
 	c, err := s.repo.Get(caseID)
 	if err != nil {
 		return CredentialReport{}, err
@@ -393,5 +398,11 @@ func (s *Service) VerifyDetailed(caseID string) (CredentialReport, error) {
 	if !passed {
 		report.Valid = false
 	}
+	s.verificationCache[caseID] = cloneCredentialReport(report)
 	return report, nil
+}
+
+func cloneCredentialReport(report CredentialReport) CredentialReport {
+	report.Checks = append([]policy.VerificationCheck(nil), report.Checks...)
+	return report
 }
