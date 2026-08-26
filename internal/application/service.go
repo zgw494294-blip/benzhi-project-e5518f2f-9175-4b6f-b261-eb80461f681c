@@ -17,10 +17,16 @@ import (
 )
 
 type Service struct {
-	mu      sync.Mutex
-	repo    *journal.Repository
-	scanner *policy.Scanner
-	now     func() time.Time
+	mu            sync.Mutex
+	repo          *journal.Repository
+	scanner       *policy.Scanner
+	now           func() time.Time
+	responseCache map[string]cachedResponse
+}
+
+type cachedResponse struct {
+	fingerprint string
+	detail      Detail
 }
 
 type Detail struct {
@@ -44,7 +50,7 @@ type Todo struct {
 }
 
 func NewService(repo *journal.Repository, scanner *policy.Scanner) *Service {
-	return &Service{repo: repo, scanner: scanner, now: time.Now}
+	return &Service{repo: repo, scanner: scanner, now: time.Now, responseCache: map[string]cachedResponse{}}
 }
 
 func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) {
@@ -77,6 +83,7 @@ func (s *Service) Create(command CreateCaseCommand, key string) (Detail, error) 
 	if _, err := s.repo.Commit(c, 0, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
+	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, detail: detail}
 	return detail, nil
 }
 
@@ -191,12 +198,19 @@ func (s *Service) changeProjected(operation, caseID string, expected int64, comm
 	if _, err := s.repo.Commit(c, expected, key, fingerprint, response); err != nil {
 		return Detail{}, err
 	}
+	s.responseCache[key] = cachedResponse{fingerprint: fingerprint, detail: detail}
 	return detail, nil
 }
 
 func (s *Service) lookup(key, fingerprint string) (Detail, bool, error) {
 	if strings.TrimSpace(key) == "" {
 		return Detail{}, false, fmt.Errorf("%w: Idempotency-Key 不能为空", domain.ErrValidation)
+	}
+	if cached, ok := s.responseCache[key]; ok {
+		if cached.fingerprint != fingerprint {
+			return Detail{}, true, journal.ErrIdempotencyConflict
+		}
+		return cached.detail, true, nil
 	}
 	raw, ok, err := s.repo.LookupIdempotency(key, fingerprint)
 	if err != nil {
